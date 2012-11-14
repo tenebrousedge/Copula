@@ -1,7 +1,7 @@
 <?php
 /**
  * Apis DataSource
- * 
+ *
  * [Short Description]
  *
  * @package default
@@ -22,7 +22,7 @@ class ApisSource extends DataSource {
  * @var array
  */
 	public $config = array();
-	
+
 	// TODO: Relocate to a dedicated schema file
 	public $_schema = array();
 
@@ -40,7 +40,7 @@ class ApisSource extends DataSource {
  * @access private
  */
 	private $__requestLog = array();
-	
+
 /**
  * Request Log limit per entry in bytes
  *
@@ -55,7 +55,7 @@ class ApisSource extends DataSource {
  * @var array
  */
 	public $map = array();
-	
+
 /**
  * API options
  * @var array
@@ -73,17 +73,23 @@ class ApisSource extends DataSource {
  * @param HttpSocket $Http
  */
 	public function __construct($config, $Http = null) {
-		parent::__construct($config);
-
+		if (!isset($this->config['database']))
+			$this->config['database'] = '';
 		// Store the API configuration map
-		$name = pluginSplit($config['driver']);
-		if (Configure::load($name[0] . '.' . Inflector::underscore($name[1]))) {
+		$name = pluginSplit($config['datasource']);
+		if (!$this->map = Configure::read('Apis.' . $name[1])) {
+			Configure::load($name[0] . '.' . $name[1]);
 			$this->map = Configure::read('Apis.' . $name[1]);
 		}
-		
+
 		// Store the HttpSocket reference
 		if (!$Http) {
-			if (isset($config['method']) && ($config['method'] = 'OAuth' || !empty($this->map['oauth']['version']))) {
+			if (!empty($this->map['oauth']['version'])) {
+				if ($this->map['oauth']['version'][0] == 2){
+					$config['method'] = 'OAuthV2';
+				} else {
+					$config['method'] = 'OAuth';
+				}
 				App::import('Lib', 'HttpSocketOauth.HttpSocketOauth');
 				$Http = new HttpSocketOauth();
 			} else {
@@ -92,8 +98,13 @@ class ApisSource extends DataSource {
 			}
 		}
 		$this->Http = $Http;
+		parent::__construct($config);
 	}
-	
+
+	public function describe(&$model) {
+		return $model->_schema;
+	}
+
 /**
  * Sends HttpSocket requests. Builds your uri and formats the response too.
  *
@@ -105,7 +116,6 @@ class ApisSource extends DataSource {
  * @author Dean Sofer
  */
 	public function request(&$model) {
-		
 		if (is_object($model)) {
 			$request = $model->request;
 		} elseif (is_array($model)) {
@@ -130,15 +140,15 @@ class ApisSource extends DataSource {
 
 		// Remove unwanted elements from request array
 		$request = array_intersect_key($request, $this->Http->request);
-		
+
 		if (!empty($this->tokens)) {
 			$request['uri']['path'] = $this->swapTokens($model, $request['uri']['path'], $this->tokens);
 		}
-		
+
 		if (method_exists($this, 'beforeRequest')) {
 			$request = $this->beforeRequest(&$model, $request);
 		}
-		
+
 		$timerStart = microtime(true);
 
 	    // Issues request
@@ -169,7 +179,7 @@ class ApisSource extends DataSource {
 			);
 			$this->__requestLog[] = $newLog;
 		}
-		
+
 		$response = $this->decode($response);
 
 		if (is_object($model)) {
@@ -183,15 +193,15 @@ class ApisSource extends DataSource {
 			}
 			return false;
 		}
-		
+
 		return $response;
 	}
-	
+
 	/**
 	 * Supplements a request array with oauth credentials
 	 *
-	 * @param object $model 
-	 * @param array $request 
+	 * @param object $model
+	 * @param array $request
 	 * @return array $request
 	 */
 	public function addOauth(&$model, $request) {
@@ -208,12 +218,12 @@ class ApisSource extends DataSource {
 		}
 		return $request;
 	}
-	
+
 	/**
 	 * Supplements a request array with oauth credentials
 	 *
-	 * @param object $model 
-	 * @param array $request 
+	 * @param object $model
+	 * @param array $request
 	 * @return array $request
 	 */
 	public function addOauthV2(&$model, $request) {
@@ -228,11 +238,11 @@ class ApisSource extends DataSource {
 		}
 		return $request;
 	}
-	
+
 	/**
 	 * Decodes the response based on the content type
 	 *
-	 * @param string $response 
+	 * @param string $response
 	 * @return void
 	 * @author Dean Sofer
 	 */
@@ -265,21 +275,22 @@ class ApisSource extends DataSource {
 				unset($Xml);
 				break;
 			case 'application/json':
+			case 'application/javascript':
 			case 'text/javascript':
 				$response = json_decode($response, true);
 				break;
 		}
 		return $response;
 	}
-	
-	public function listSources() {
+
+	/*public function listSources() {
 		return array_keys($this->_schema);
-	}
-	
+	}*/
+
 	/**
 	 * Iterates through the tokens (passed or request items) and replaces them into the url
 	 *
-	 * @param string $url 
+	 * @param string $url
 	 * @param array $tokens optional
 	 * @return string $url
 	 * @author Dean Sofer
@@ -292,7 +303,7 @@ class ApisSource extends DataSource {
 		$url = strtr($url, $formattedTokens);
 		return $url;
 	}
-	
+
 /**
  * Generates a conditions section of the url
  *
@@ -312,18 +323,18 @@ class ApisSource extends DataSource {
 		}
 		return implode($this->options['ps'], $query);
 	}
-	
+
 /**
  * Tries iterating through the config map of REST commmands to decide which command to use
  *
- * @param object $model 
- * @param string $action 
- * @param string $section 
- * @param array $params 
+ * @param object $model
+ * @param string $action
+ * @param string $section
+ * @param array $fields
  * @return boolean $found
  * @author Dean Sofer
  */
-	public function scanMap(&$model, $action, $section, $params = array()) {
+	public function scanMap(&$model, $action, $section, $fields = array()) {
 		if (!isset($this->map[$action][$section])) {
 			$this->log('Section ' . $section . ' not found in Apis Driver Configuration Map - ' . get_class($this));
 			return false;
@@ -332,13 +343,13 @@ class ApisSource extends DataSource {
 		foreach ($map as $path => $conditions) {
 			$optional = (isset($conditions['optional'])) ? $conditions['optional'] : array();
 			unset($conditions['optional']);
-			if (array_intersect(array_keys($params), $conditions) == $conditions) {
+			if (array_intersect($fields, $conditions) == $conditions) {
 				return array($path, $conditions, $optional);
 			}
 		}
 		return false;
 	}
-	
+
 /**
  * Play nice with the DebugKit
  *
@@ -353,13 +364,13 @@ class ApisSource extends DataSource {
 		}
 		return array('log' => $log, 'count' => count($log), 'time' => 'Unknown');
 	}
-	
-	
+
+
 /**
  * Just-In-Time callback for any last-minute request modifications
  *
- * @param object $model 
- * @param array $request 
+ * @param object $model
+ * @param array $request
  * @return array $request
  * @author Dean Sofer
  */
@@ -382,23 +393,24 @@ class ApisSource extends DataSource {
 			$model->request = array();
 		}
 		$model->request = array_merge(array('method' => 'GET'), $model->request);
-		
+		if (!isset($queryData['conditions'])) {
+			$queryData['conditions'] = array();
+		}
 		if (empty($model->request['uri']['path']) && !empty($queryData['path'])) {
 			$model->request['uri']['path'] = $queryData['path'];
-		} elseif (!empty($this->map['read']) && is_string($queryData['fields'])) {
-			if (!isset($queryData['conditions'])) {
-				$queryData['conditions'] = array();
-			}
-			$scan = $this->scanMap($model, 'read', $queryData['fields'], $queryData['conditions']);
-			if ($scan) {
-				$model->request['uri']['path'] = $scan[0];
-				$model->request['uri']['query'] = array();
-				$usedConditions = array_intersect(array_keys($queryData['conditions']), array_merge($scan[1], $scan[2]));
-				foreach ($usedConditions as $condition) {
-					$model->request['uri']['query'][$condition] = $queryData['conditions'][$condition];
-				}
+			$model->request['uri']['query'] = $queryData['conditions'];
+		} elseif (!empty($this->map['read']) && (is_string($queryData['fields']) || !empty($queryData['section']))) {
+			if (!empty($queryData['section'])) {
+				$section = $queryData['section'];
 			} else {
-				return false;				
+				$section = $queryData['fields'];
+			}
+			$scan = $this->scanMap($model, 'read', $section, array_keys($queryData['conditions']));
+			$model->request['uri']['path'] = $scan[0];
+			$model->request['uri']['query'] = array();
+			$usedConditions = array_intersect(array_keys($queryData['conditions']), array_merge($scan[1], $scan[2]));
+			foreach ($usedConditions as $condition) {
+				$model->request['uri']['query'][$condition] = $queryData['conditions'][$condition];
 			}
 		}
 		return $this->request($model);
@@ -417,8 +429,14 @@ class ApisSource extends DataSource {
 		}
 		if (empty($model->request['body']) && !empty($fields) && !empty($values)) {
 			$model->request['body'] = array_combine($fields, $values);
-		}
+                }
 		$model->request = array_merge(array('method' => 'POST'), $model->request);
+		$scan = $this->scanMap($model, 'create', $model->useTable, $fields);
+		if ($scan) {
+			$model->request['uri']['path'] = $scan[0];
+		} else {
+			return false;
+		}
 		return $this->request($model);
 	}
 
@@ -437,6 +455,14 @@ class ApisSource extends DataSource {
 			$model->request['body'] = array_combine($fields, $values);
 		}
 		$model->request = array_merge(array('method' => 'PUT'), $model->request);
+		if (!empty($this->map['update']) && in_array('section', $fields)) {
+			$scan = $this->scanMap($model, 'write', $fields['section'], $fields);
+			if ($scan) {
+				$model->request['uri']['path'] = $scan[0];
+			} else {
+				return false;
+			}
+		}
 		return $this->request($model);
 	}
 
@@ -452,5 +478,13 @@ class ApisSource extends DataSource {
 		}
 		$model->request = array_merge(array('method' => 'DELETE'), $model->request);
 		return $this->request($model);
+	}
+
+	public function calculate($model, $func, $params = array()) {
+
+	}
+
+	public function getColumnType() {
+		return true;
 	}
 }
