@@ -3,5 +3,3 @@
 class CopulaAppController extends AppController {
 
 }
-
-?>

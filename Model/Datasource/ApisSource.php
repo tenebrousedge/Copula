@@ -3,13 +3,8 @@
 /**
  * Apis DataSource
  *
- * [Short Description]
- *
- * @package default
- * @author Dean Sofer
- * */
+ */
 App::uses('DataSource', 'Model/Datasource');
-App::uses('HttpSocketOauth', 'Copula.Network/Http');
 App::uses('HttpSocket', 'Network/Http');
 App::uses('Hash', 'Utility');
 
