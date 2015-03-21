@@ -1,4 +1,5 @@
 {
+    "name": "tenebrousedge/copula",
     "require": {
         "league/oauth2-client": "0.10.*"
     }
